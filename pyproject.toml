@@ -1,0 +1,17 @@
+[project]
+name = "subnet-niome"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "bio>=1.8.3",
+    "bittensor==11.0.1",
+    "boto3>=1.43.45",
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "uvicorn>=0.30.0",
+    "dotenv>=0.9.9",
+    "scikit-learn>=1.9.0",
+    "wandb>=0.28.0",
+]
