@@ -159,7 +159,7 @@ async def run_validation(self):
                 continue
 
         valid_scores = [score for score in scores if score.final_score > 0]
-        logger.info(f"Scores: {valid_scores}")
+        logger.info(f"Final scores: {[(s.uid, s.final_score) for s in valid_scores]}")
 
         self.set_weights(scores, self.task_id)
         valid_uids = [

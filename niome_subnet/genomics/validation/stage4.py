@@ -58,7 +58,7 @@ def run_stage4() -> None:
         pgxlib.write_json(FINAL_REWARD_FILE, {
             "rejected": True, "rejection_reason": stage12["rejection_reason"],
             "raw_score": 0.0, "calibration_factor": 0.0, "final_reward": 0.0})
-        pgxlib.write_json("calibration_diagnostics.json", {"rejected": True})
+        pgxlib.write_json("data/calibration_diagnostics.json", {"rejected": True})
         return
 
     # Fail loud on a missing, foreign or partial Stage 3.
@@ -165,7 +165,7 @@ def run_stage4() -> None:
     decomposition, reliability_table = (
         murphy_decomposition(pairs, N_RELIABILITY_BINS) if pairs else ({}, []))
 
-    pgxlib.write_json("calibration_diagnostics.json", {
+    pgxlib.write_json("data/calibration_diagnostics.json", {
         "round_id": stage12["round_id"],
         "miner_uid": stage12["miner_uid"],
         "n_scored": n,
