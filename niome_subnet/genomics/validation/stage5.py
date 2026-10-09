@@ -15,6 +15,19 @@ from niome_subnet.utils.settings import (
 STRATUM_AXES = ["rarity_band", "sv_class", "depth_band"]
 
 
+def calibration_breakdown(reward: dict) -> dict:
+    """Select non-secret diagnostics that miners need to tune confidence."""
+    return {
+        "n_calibration_calls": reward.get("n_calibration_calls", 0),
+        "brier_score": reward.get("brier_score"),
+        "brier_skill_score": reward.get("brier_skill_score"),
+        "empirical_exact_match_rate": reward.get(
+            "empirical_exact_match_rate"
+        ),
+        "reliability_bins": reward.get("reliability_bins", []),
+    }
+
+
 def stratum_key(strata: dict, wildcards: frozenset = frozenset()) -> tuple:
     return tuple("*" if axis in wildcards else strata[axis] for axis in STRATUM_AXES)
 
@@ -120,6 +133,7 @@ def run_stage5():
                 "final_reward": 0.0, 
                 "achievable_max": 0.0, 
                 "raw_score_fraction": 0.0, "score_fraction": 0.0, 
+                **calibration_breakdown(reward),
             },
             "final_score": 0.0, 
         }
@@ -310,6 +324,7 @@ def run_stage5():
             "achievable_max": achievable_max,
             "raw_score_fraction": raw_score_fraction,
             "score_fraction": score_fraction,
+            **calibration_breakdown(reward),
         }, 
         "final_score": final_score, 
     }

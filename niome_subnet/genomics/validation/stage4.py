@@ -57,7 +57,10 @@ def run_stage4() -> None:
     if stage12["rejected"]:
         pgxlib.write_json(FINAL_REWARD_FILE, {
             "rejected": True, "rejection_reason": stage12["rejection_reason"],
-            "raw_score": 0.0, "calibration_factor": 0.0, "final_reward": 0.0})
+            "raw_score": 0.0, "calibration_factor": 0.0, "final_reward": 0.0,
+            "n_calibration_calls": 0, "brier_score": None,
+            "empirical_exact_match_rate": None, "brier_skill_score": None,
+            "reliability_bins": []})
         pgxlib.write_json("data/calibration_diagnostics.json", {"rejected": True})
         return
 
@@ -186,6 +189,8 @@ def run_stage4() -> None:
         "final_reward": raw * factor,
         "n_calibration_calls": n,
         "brier_score": brier,
+        "empirical_exact_match_rate": base,
         "brier_skill_score": bss,
+        "reliability_bins": reliability_table,
         "warnings": warnings,
     })
