@@ -275,7 +275,7 @@ def run_stage5():
     raw_score_fraction = ((reward["raw_score"] / achievable_max)
                           if achievable_max > 0 else 0.0)
 
-    pgxlib.write_json("stage5_summary.json", {
+    pgxlib.write_json("data/stage5_summary.json", {
         "round_id": stage12["round_id"],
         "miner_uid": miner_uid,
         "n_issued_calls": len(per_call),

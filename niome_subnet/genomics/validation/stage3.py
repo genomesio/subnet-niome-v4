@@ -109,8 +109,8 @@ def run_stage3() -> None:
         pgxlib.write_json(STAGE3_RESULTS_FILE, {
             "rejected": True, "rejection_reason": stage12["rejection_reason"],
             "calls": [], "stage3_raw": 0.0})
-        pgxlib.write_json("inconsistency_report.json", {"calls": []})
-        pgxlib.write_json("inverted_recommendations.json", {"calls": []})
+        pgxlib.write_json("data/inconsistency_report.json", {"calls": []})
+        pgxlib.write_json("data/inverted_recommendations.json", {"calls": []})
         return
 
     submitted_recs: dict[tuple[str, str], dict] = {}
@@ -236,9 +236,9 @@ def run_stage3() -> None:
                       for g, t in sorted(adjacency.items())},
         "calls": results,
     })
-    pgxlib.write_json("inconsistency_report.json", {
+    pgxlib.write_json("data/inconsistency_report.json", {
         "n_inconsistent": len(inconsistent),
         "calls": sorted(inconsistent, key=lambda r: (r["case_id"], r["gene"]))})
-    pgxlib.write_json("inverted_recommendations.json", {
+    pgxlib.write_json("data/inverted_recommendations.json", {
         "n_inverted": len(inverted),
         "calls": sorted(inverted, key=lambda r: (r["case_id"], r["gene"]))})
