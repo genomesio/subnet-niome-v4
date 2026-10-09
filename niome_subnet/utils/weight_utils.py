@@ -1,5 +1,6 @@
 import logging
 import math
+import operator
 from typing import Any, Iterable, Tuple, List, Union
 
 import numpy as np
@@ -23,19 +24,48 @@ def miner_score_fraction(score: Any) -> float:
     miner's disjoint bundle.  Stage 5 already publishes ``score_fraction`` as
     ``final_score / achievable_max``; that is the value that can be compared
     fairly across bundles.
+
+    A finite value outside ``[0, 1]`` is clamped, not discarded.  The contract is
+    fetched per round rather than pinned, and an over-range fraction can only come
+    from credit weights that exceed the ceiling -- which hits the *strongest*
+    miners first.  Scoring them zero would hand the round to the weakest.
+
+    Structurally bad data -- a missing key, a non-dict breakdown, a non-finite or
+    non-numeric value -- still fails to zero, but logs on the way, because a
+    round-wide silent zero is indistinguishable from every miner having failed.
     """
+    uid = getattr(score, "uid", "<unknown>")
     breakdown = getattr(score, "breakdown", None)
     if not isinstance(breakdown, dict):
+        logger.error("miner %s: breakdown is %s, not a dict; scoring 0.0",
+                     uid, type(breakdown).__name__)
         return 0.0
-    value = breakdown.get("score_fraction")
+    if "score_fraction" not in breakdown:
+        logger.error(
+            "miner %s: breakdown has no 'score_fraction' key (present: %s); "
+            "scoring 0.0 -- if this holds for every miner the round's weight "
+            "falls through to the owner hotkey", uid, sorted(breakdown))
+        return 0.0
+    value = breakdown["score_fraction"]
     if isinstance(value, bool):
+        logger.error("miner %s: score_fraction is a bool (%r); scoring 0.0",
+                     uid, value)
         return 0.0
     try:
         result = float(value)
     except (TypeError, ValueError):
+        logger.error("miner %s: score_fraction %r is not a number; scoring 0.0",
+                     uid, value)
         return 0.0
-    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
+    if not math.isfinite(result):
+        logger.error("miner %s: score_fraction is %r; scoring 0.0", uid, result)
         return 0.0
+    if not 0.0 <= result <= 1.0:
+        clamped = min(max(result, 0.0), 1.0)
+        logger.warning(
+            "miner %s: score_fraction %r outside [0, 1]; clamping to %s -- "
+            "check the contract's credit weights", uid, result, clamped)
+        return clamped
     return result
 
 
@@ -45,8 +75,20 @@ def score_fractions_by_uid(scores: Iterable[Any], size: int) -> np.ndarray:
         raise ValueError("score array size cannot be negative")
     result = np.zeros(size, dtype=np.float32)
     for score in scores:
-        uid = getattr(score, "uid", None)
-        if isinstance(uid, bool) or not isinstance(uid, int) or not 0 <= uid < size:
+        raw_uid = getattr(score, "uid", None)
+        if isinstance(raw_uid, bool):
+            logger.error("skipping miner score with bool uid %r", raw_uid)
+            continue
+        try:
+            # operator.index accepts numpy integers; isinstance(_, int) does not,
+            # and self.miner_uids is an np.int64 array.
+            uid = operator.index(raw_uid)
+        except TypeError:
+            logger.error("skipping miner score with non-integer uid %r", raw_uid)
+            continue
+        if not 0 <= uid < size:
+            logger.error("skipping miner score with uid %d outside [0, %d)",
+                         uid, size)
             continue
         result[uid] = miner_score_fraction(score)
     return result
