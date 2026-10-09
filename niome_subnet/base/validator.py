@@ -38,6 +38,7 @@ from niome_subnet.utils import (
     fetch_metagraph_with_retry,
     process_scores_linear,
     process_scores_top,
+    score_fractions_by_uid,
     process_weights_for_netuid,
 )
 
@@ -221,11 +222,7 @@ class BaseValidatorNeuron(BaseNeuron):
         n = len(self.metagraph)
         metagraph_uids = np.array([neuron.uid for neuron in self.metagraph.neurons])
 
-        scores_array = np.zeros(n, dtype=np.float32)
-        for ms in scores:
-            if 0 <= ms.uid < n:
-                scores_array[ms.uid] = ms.final_score
-        scores_array = np.nan_to_num(scores_array)
+        scores_array = score_fractions_by_uid(scores, n)
 
         if SCORING_SYSTEM == "linear":
             processed_scores = process_scores_linear(scores_array)

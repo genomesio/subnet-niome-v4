@@ -1,6 +1,9 @@
 import logging
+import math
+from typing import Any, Iterable, Tuple, List, Union
+
 import numpy as np
-from typing import Any, Tuple, List, Union
+
 from niome_subnet.utils.settings import (
     SCORE_DISTRIBUTION,
     TOP_MINER_COUNT,
@@ -11,6 +14,42 @@ logger = logging.getLogger(__name__)
 
 U32_MAX = 4294967295
 U16_MAX = 65535
+
+
+def miner_score_fraction(score: Any) -> float:
+    """Return the comparable score for one miner, failing invalid data to zero.
+
+    ``final_score`` is an absolute sum whose ceiling depends on the cases in a
+    miner's disjoint bundle.  Stage 5 already publishes ``score_fraction`` as
+    ``final_score / achievable_max``; that is the value that can be compared
+    fairly across bundles.
+    """
+    breakdown = getattr(score, "breakdown", None)
+    if not isinstance(breakdown, dict):
+        return 0.0
+    value = breakdown.get("score_fraction")
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
+        return 0.0
+    return result
+
+
+def score_fractions_by_uid(scores: Iterable[Any], size: int) -> np.ndarray:
+    """Build a dense UID-indexed array of comparable miner scores."""
+    if size < 0:
+        raise ValueError("score array size cannot be negative")
+    result = np.zeros(size, dtype=np.float32)
+    for score in scores:
+        uid = getattr(score, "uid", None)
+        if isinstance(uid, bool) or not isinstance(uid, int) or not 0 <= uid < size:
+            continue
+        result[uid] = miner_score_fraction(score)
+    return result
 
 
 def normalize_max_weight(x: np.ndarray, limit: float = 0.1) -> np.ndarray:
