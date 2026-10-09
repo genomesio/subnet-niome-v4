@@ -264,8 +264,9 @@ consensus possible.
 
 ## From score to weight
 
-`set_weights()` (`niome_subnet/base/validator.py`) turns `final_score` per uid into on-chain
-weights:
+`set_weights()` (`niome_subnet/base/validator.py`) turns the normalised `score_fraction`
+per uid into on-chain weights. `final_score` remains in the result for auditing, but is not
+used to rank miners because its achievable ceiling differs between disjoint bundles:
 
 1. `SCORING_SYSTEM` selects the shape. The shipped value is `"top"`: only the top
    `TOP_MINER_COUNT` positive-scoring miners receive weight, allocated by

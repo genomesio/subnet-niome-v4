@@ -33,7 +33,7 @@ from niome_subnet.api import (
 from niome_subnet.genomics.validation import benchmark_submission
 from niome_subnet.genomics.validation.errors import ValidatorFault
 from niome_subnet.protocol import GenomicsTaskSynapse
-from niome_subnet.utils import get_miner_uids
+from niome_subnet.utils import get_miner_uids, miner_score_fraction
 from niome_subnet.genomics.subnet import generate_miner_bundles
 
 logger = logging.getLogger(__name__)
@@ -158,12 +158,18 @@ async def run_validation(self):
             except:
                 continue
 
-        valid_scores = [score for score in scores if score.final_score > 0]
-        logger.info(f"Final scores: {[(s.uid, s.final_score) for s in valid_scores]}")
+        valid_scores = [score for score in scores if miner_score_fraction(score) > 0]
+        logger.info(
+            "Score fractions: %s",
+            [(score.uid, miner_score_fraction(score)) for score in valid_scores],
+        )
 
         self.set_weights(scores, self.task_id)
         valid_uids = [
-            s.uid for s in sorted(valid_scores, key=lambda s: s.final_score, reverse=True)
+            score.uid
+            for score in sorted(
+                valid_scores, key=miner_score_fraction, reverse=True
+            )
         ]
         if len(valid_uids) > 0:
             upload_final_submissions_to_server(self, valid_uids)
