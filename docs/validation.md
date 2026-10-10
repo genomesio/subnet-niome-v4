@@ -151,9 +151,19 @@ empirical match rate, or a NaN all resolve to the floor. A guard that resolved a
 unevaluable submission to 1.0 would let a maliciously sparse submission claim the maximum
 factor by being too small to evaluate; a gate must not rely on another gate to be safe.
 
+**A submission that matched every scored call is the one exception.** Its empirical rate is
+1.0, so the reference Brier score `base × (1 − base)` is zero and the skill score is
+undefined rather than bad — dividing by a clamped epsilon would send it to −10⁷ and clip a
+perfect submission to the floor for declaring 0.9 instead of 1.0, making overconfidence pay.
+That case resolves on accuracy alone, to a factor of 1.0, and reports a null skill score.
+The N floor still applies first, so it cannot be reached by submitting too little to score.
+
 A full Murphy decomposition (reliability − resolution + uncertainty) and a ten-bin
 reliability table are written to `calibration_diagnostics.json` for diagnosis. They are
-reported, not scored.
+reported, not scored, and they stay **validator-local**: the miner picks which bin each of
+its calls falls into by choosing the confidence, so a bin holding a single call would report
+that call's hidden `exact_match` label outright. The aggregate figures a miner needs to tune
+confidence are in the breakdown instead — see *Reading the breakdown*.
 
 Applied as a multiplicative gate on the submission's reward.
 
@@ -246,6 +256,23 @@ so it is not comparable across rounds. Two normalised figures in the breakdown a
 
 `achievable_max` is what this round's issued, non-probe calls would be worth if every one
 scored an exact match with full Stage 3 credit, at the weights this round actually drew.
+
+Four Stage 4 aggregates are also in the breakdown, so a miner can tell a calibration gate
+from an accuracy problem without guessing:
+
+- `n_calibration_calls` — how many calls carried a usable confidence. This is the
+  **denominator for the three figures below**, and it is smaller than the bundle: no-calls,
+  probe calls and non-numeric confidences are all excluded.
+- `brier_score` — mean squared error of the reported confidences, over those calls.
+- `empirical_exact_match_rate` — the exact-match rate over those same calls. It is **not**
+  accuracy over the bundle: a submission that no-calls most of its calls and nails the rest
+  shows a high rate here next to a low `raw_score_fraction`.
+- `brier_skill_score` — `brier_score` against that rate as the reference, and the figure the
+  calibration factor is a linear map of. `null` means it was not evaluable (no scored calls,
+  or every scored call matched).
+
+Every one of these is an aggregate over the whole submission. Per-call and per-bin
+diagnostics stay validator-local, for the reason given under Stage 4.
 
 ## Determinism
 

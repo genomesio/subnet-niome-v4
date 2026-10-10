@@ -15,6 +15,33 @@ from niome_subnet.utils.settings import (
 STRATUM_AXES = ["rarity_band", "sv_class", "depth_band"]
 
 
+def calibration_breakdown(reward: dict) -> dict:
+    """Select non-secret diagnostics that miners need to tune confidence.
+
+    Every field here is an AGGREGATE over the whole submission. That is the
+    admission test, and two things fail it:
+
+    The ten-bin reliability table (written to calibration_diagnostics.json for
+    the validator) must not be forwarded. The miner chooses which bin each call
+    lands in, because the bin index is int(confidence * N_RELIABILITY_BINS), so
+    a bin it puts a single call into reports an observed_rate of exactly 0.0 or
+    1.0 — the hidden exact_match label for that one (case_id, gene). Ten bins
+    is ~9 free ground-truth labels per round for a few hundredths of Brier.
+
+    `warnings` must not be forwarded either: its strings interpolate
+    MIN_CALIBRATION_N, a declared SECRET_KEYS entry in export_miner_bundles.py.
+
+    Reads defensively: a reward artifact written before these fields existed
+    must still produce a full breakdown rather than a KeyError.
+    """
+    return {
+        "n_calibration_calls": reward.get("n_calibration_calls", 0),
+        "brier_score": reward.get("brier_score"),
+        "brier_skill_score": reward.get("brier_skill_score"),
+        "empirical_exact_match_rate": reward.get("empirical_exact_match_rate"),
+    }
+
+
 def stratum_key(strata: dict, wildcards: frozenset = frozenset()) -> tuple:
     return tuple("*" if axis in wildcards else strata[axis] for axis in STRATUM_AXES)
 
@@ -118,10 +145,11 @@ def run_stage5():
                 "stratum_coverage_factor": 0.0, 
                 "honeypot_integrity_factor": 0.0,
                 "final_reward": 0.0, 
-                "achievable_max": 0.0, 
-                "raw_score_fraction": 0.0, "score_fraction": 0.0, 
+                "achievable_max": 0.0,
+                "raw_score_fraction": 0.0, "score_fraction": 0.0,
+                **calibration_breakdown(reward),
             },
-            "final_score": 0.0, 
+            "final_score": 0.0,
         }
 
     miner_uid = stage12["miner_uid"]
@@ -310,6 +338,7 @@ def run_stage5():
             "achievable_max": achievable_max,
             "raw_score_fraction": raw_score_fraction,
             "score_fraction": score_fraction,
-        }, 
+            **calibration_breakdown(reward),
+        },
         "final_score": final_score, 
     }

@@ -3,7 +3,10 @@ from niome_subnet.genomics.validation.errors import ValidatorFault
 from niome_subnet.genomics.validation.stage12 import run_stage12
 from niome_subnet.genomics.validation.stage3 import run_stage3
 from niome_subnet.genomics.validation.stage4 import run_stage4
-from niome_subnet.genomics.validation.stage5 import run_stage5
+from niome_subnet.genomics.validation.stage5 import (
+    calibration_breakdown,
+    run_stage5,
+)
 
 
 def benchmark_submission(uid: int) -> MinerScore:
@@ -44,6 +47,11 @@ def benchmark_submission(uid: int) -> MinerScore:
                 "achievable_max": 0.0,
                 "raw_score_fraction": 0.0,
                 "score_fraction": 0.0,
+                # Every uid in a round must carry the same breakdown keys, or a
+                # consumer indexing a field crashes on exactly the uids that
+                # failed here. calibration_breakdown({}) is the one definition
+                # of the defaults.
+                **calibration_breakdown({}),
             },
             final_score=0.0,
             log=f"Invalid submission: {e}"

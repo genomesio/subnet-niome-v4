@@ -44,6 +44,65 @@ def murphy_decomposition(pairs: list[tuple[float, int]],
              "uncertainty": base * (1 - base)}, table)
 
 
+def calibration_factor(pairs: list[tuple[float, int]], constants: dict,
+                       floor: float) -> tuple[float, float | None,
+                                              float | None, float | None,
+                                              list[str]]:
+    """Returns (factor, brier, empirical match rate, skill score, warnings).
+
+    Pure so the guard behaviour is testable without a round's artifacts.
+    """
+    n = len(pairs)
+    warnings: list[str] = []
+
+    if n == 0:
+        warnings.append("no scored calls with a confidence; failing to the floor")
+        return floor, None, None, None, warnings
+
+    brier = math.fsum((c - o) ** 2 for c, o in pairs) / n
+    base = math.fsum(o for _, o in pairs) / n
+    bs_ref = base * (1.0 - base)
+
+    if bs_ref > 0.0:
+        bss = 1.0 - brier / bs_ref
+        factor = constants["intercept"] + constants["slope"] * bss
+    else:
+        # A degenerate reference — every scored call matched, or none did —
+        # makes the skill score UNDEFINED, not terrible. Dividing by a clamped
+        # epsilon instead sends bss to -1e7 for any nonzero brier, so a miner
+        # that matched 67/67 calls while honestly declaring 0.9 would clip to
+        # the floor while the same miner declaring 1.0 scored 1.0. That is
+        # overconfidence strictly dominating calibration, the opposite of what
+        # a proper scoring rule is for. Resolve the degenerate case on accuracy
+        # alone and report no skill score.
+        bss = None
+        factor = 1.0 if base == 1.0 else floor
+
+    # Guards fail to the FLOOR, not to neutral. A guard that resolves an
+    # unevaluable case to 1.0 lets a maliciously sparse submission claim a
+    # maximum factor by being too small to evaluate — the failure mode this
+    # floor exists to close. The only way to reach N < 30 in a 200-case round is to
+    # no_call more than ~92% of calls, which is not an honest sparse
+    # submission. A gate must not rely on a different gate to be safe.
+    if n < constants["MIN_CALIBRATION_N"]:
+        factor = floor
+        warnings.append(
+            f"N={n} < MIN_CALIBRATION_N={constants['MIN_CALIBRATION_N']}; "
+            "failing to the floor, not to neutral")
+    elif base == 0.0:
+        factor = floor
+        warnings.append("empirical exact-match rate is 0; failing to the floor")
+    elif base == 1.0:
+        warnings.append(
+            "every scored call matched; Brier skill score is undefined against "
+            "a zero-variance reference and is reported as null")
+    elif math.isnan(factor):
+        factor = floor
+        warnings.append("calibration factor was NaN; failing to the floor")
+
+    return min(max(factor, floor), 1.0), brier, base, bss, warnings
+
+
 def run_stage4() -> None:
     with validator_owned("validator round artifacts"):
         contract = pgxlib.read_json(CONTRACT_FILE)
@@ -57,7 +116,9 @@ def run_stage4() -> None:
     if stage12["rejected"]:
         pgxlib.write_json(FINAL_REWARD_FILE, {
             "rejected": True, "rejection_reason": stage12["rejection_reason"],
-            "raw_score": 0.0, "calibration_factor": 0.0, "final_reward": 0.0})
+            "raw_score": 0.0, "calibration_factor": 0.0, "final_reward": 0.0,
+            "n_calibration_calls": 0, "brier_score": None,
+            "empirical_exact_match_rate": None, "brier_skill_score": None})
         pgxlib.write_json("data/calibration_diagnostics.json", {"rejected": True})
         return
 
@@ -128,39 +189,8 @@ def run_stage4() -> None:
              if not c["no_call"] and isinstance(c["confidence"], (int, float))]
 
     n = len(pairs)
-    warnings = []
-
-    if n == 0:
-        factor, brier, base, bss = floor, None, None, None
-        warnings.append("no scored calls with a confidence; failing to the floor")
-    else:
-        brier = math.fsum((c - o) ** 2 for c, o in pairs) / n
-        base = math.fsum(o for _, o in pairs) / n
-        bs_ref = base * (1.0 - base)
-        bss = 1.0 - brier / max(bs_ref, 1e-9)
-        factor = constants["intercept"] + constants["slope"] * bss
-
-        # Guards fail to the FLOOR, not to neutral. A guard that resolves an
-        # unevaluable case to 1.0 lets a maliciously sparse submission claim a
-        # maximum factor by being too small to evaluate — the failure mode this
-        # floor exists to close. The only way to reach N < 30 in a 200-case round is to
-        # no_call more than ~92% of calls, which is not an honest sparse
-        # submission. A gate must not rely on a different gate to be safe.
-        if n < constants["MIN_CALIBRATION_N"]:
-            factor = floor
-            warnings.append(
-                f"N={n} < MIN_CALIBRATION_N={constants['MIN_CALIBRATION_N']}; "
-                "failing to the floor, not to neutral")
-        elif base == 1.0 and brier == 0.0:
-            factor = 1.0
-        elif base == 0.0:
-            factor = floor
-            warnings.append("empirical exact-match rate is 0; failing to the floor")
-        elif math.isnan(factor):
-            factor = floor
-            warnings.append("calibration factor was NaN; failing to the floor")
-
-        factor = min(max(factor, floor), 1.0)
+    factor, brier, base, bss, warnings = calibration_factor(
+        pairs, constants, floor)
 
     decomposition, reliability_table = (
         murphy_decomposition(pairs, N_RELIABILITY_BINS) if pairs else ({}, []))
@@ -186,6 +216,7 @@ def run_stage4() -> None:
         "final_reward": raw * factor,
         "n_calibration_calls": n,
         "brier_score": brier,
+        "empirical_exact_match_rate": base,
         "brier_skill_score": bss,
         "warnings": warnings,
     })
