@@ -13,7 +13,14 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
 AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET")
 
-# S3 layout. Presigned URLs are key-bound, so the writer and the reader of an
+# ---- Google Drive Settings -----
+# Used only when the AWS settings above are not set.
+# Service account JSON key file; the root folder must be shared with its client_email.
+GOOGLE_SERVICE_ACCOUNT_FILE = os.path.expanduser(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", ""))
+# ID of the Drive folder that submissions and bundles are stored under.
+GOOGLE_DRIVE_ROOT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+
+# Storage layout (S3 keys, or folder paths on Google Drive). Upload/download URLs are key-bound, so the writer and the reader of an
 # object MUST derive its key from the same helper: a literal written out twice
 # is a prefix mismatch waiting to happen, and it surfaces only as a HeadObject
 # 404 on every uid at scoring time.

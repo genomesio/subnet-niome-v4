@@ -18,7 +18,6 @@
 
 import asyncio
 import bittensor as bt
-import boto3
 import httpx
 import logging
 import niome_subnet.utils.settings as config
@@ -33,10 +32,13 @@ from niome_subnet.api import (
 from niome_subnet.genomics.validation import benchmark_submission
 from niome_subnet.genomics.validation.errors import ValidatorFault
 from niome_subnet.protocol import GenomicsTaskSynapse
+from niome_subnet.storage import SubmissionTooLarge, SubmissionTooLate, get_storage
 from niome_subnet.utils import get_miner_uids, miner_score_fraction
 from niome_subnet.genomics.subnet import generate_miner_bundles
 
 logger = logging.getLogger(__name__)
+
+URL_ATTEMPTS = 3
 
 
 async def query_miner(self, uid: int, axon_endpoint: str, synapse: GenomicsTaskSynapse):
@@ -58,6 +60,23 @@ async def query_miner(self, uid: int, axon_endpoint: str, synapse: GenomicsTaskS
         logger.error(f"Error querying miner {uid} at {axon_endpoint}: {e}")
         return None
 
+async def create_miner_urls(storage, uid: int) -> tuple[str, str] | None:
+    """A miner's (bundle download URL, submission upload URL), retrying transient
+    storage errors. Returns None if every attempt fails."""
+    for attempt in range(1, URL_ATTEMPTS + 1):
+        try:
+            bundle_url = storage.create_download_url(
+                config.bundle_key(uid), config.BUNDLE_URL_EXPIRY)
+            upload_url = storage.create_upload_url(
+                config.submission_key(uid), config.SUBMISSION_TIMEOUT)
+            return bundle_url, upload_url
+        except Exception as e:
+            logger.warning(f"Creating URLs for miner {uid} failed (attempt {attempt}/{URL_ATTEMPTS}): {e}")
+            if attempt < URL_ATTEMPTS:
+                await asyncio.sleep(2 ** attempt)
+    logger.error(f"Skipping miner {uid} this broadcast: could not create its URLs")
+    return None
+
 async def broadcast_task(self):
     logger.info("Broadcasting task ...")
     try:
@@ -67,14 +86,9 @@ async def broadcast_task(self):
         task = fetch_task(self)
         logger.info(f"Fetched task {task.id}")
 
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
-            region_name=config.AWS_REGION,
-        )
+        storage = get_storage()
 
-        generate_miner_bundles(self.miner_uids, s3_client)
+        generate_miner_bundles(self.miner_uids, storage)
 
         if self.task_id != task.id:
             self.collected_uids = []
@@ -93,26 +107,14 @@ async def broadcast_task(self):
             if axon_endpoint is None:
                 continue
 
+            urls = await create_miner_urls(storage, uid)
+            if urls is None:
+                # Not marked as collected, so the next broadcast tries this miner again.
+                continue
+            bundle_url, presigned_url = urls
+
             self.collected_uids.append(uid)
             self.save_state()
-
-            bundle_url = s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": config.AWS_S3_BUCKET,
-                    "Key": config.bundle_key(uid),
-                },
-                ExpiresIn=config.BUNDLE_URL_EXPIRY,
-            )
-
-            presigned_url = s3_client.generate_presigned_url(
-                "put_object",
-                Params={
-                    "Bucket": config.AWS_S3_BUCKET,
-                    "Key": config.submission_key(uid),
-                },
-                ExpiresIn=config.SUBMISSION_TIMEOUT,
-            )
 
             synapse = GenomicsTaskSynapse(
                 task=task,
@@ -129,17 +131,11 @@ async def run_validation(self):
     try:
         scores = []
 
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
-            region_name=config.AWS_REGION,
-        )
+        storage = get_storage()
 
         for uid in self.miner_uids:
             try:
-                s3_client.download_file(
-                    config.AWS_S3_BUCKET,
+                storage.download_file(
                     config.submission_key(uid),
                     config.MINER_SUBMISSION_FILE,
                 )
@@ -155,7 +151,13 @@ async def run_validation(self):
                     f"Validator fault while scoring uid {uid}; abandoning this "
                     f"round without setting weights", exc_info=True)
                 return
-            except:
+            except FileNotFoundError:
+                logger.info(f"Skipping miner {uid}: no submission found")
+                continue
+            except (SubmissionTooLate, SubmissionTooLarge) as e:
+                logger.warning(f"Skipping miner {uid}: {e}")
+                continue
+            except Exception:
                 continue
 
         valid_scores = [score for score in scores if miner_score_fraction(score) > 0]

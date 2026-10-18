@@ -1,6 +1,5 @@
 import logging
 
-import boto3
 import json
 import niome_subnet.utils.settings as config
 import requests
@@ -8,6 +7,7 @@ import time
 import urllib.request
 
 from niome_subnet.genomics.model import MinerScoreDto, Task
+from niome_subnet.storage import get_json
 
 logger = logging.getLogger(__name__)
 
@@ -119,24 +119,13 @@ def submit_validation_result(self, miner_scores: list[MinerScoreDto]) -> None:
     post(self, config.MINER_SCORE_URL, payload)
 
 def upload_final_submissions_to_server(self, uids: list[int]) -> None:
-    """Download submissions by UIDs from S3, and upload to server."""
+    """Download submissions by UIDs from storage (S3 or Google Drive), and upload to server."""
     try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
-            region_name=config.AWS_REGION,
-        )
-
         submissions = []
 
         for uid in uids:
             try:
-                obj = s3_client.get_object(
-                    Bucket=config.AWS_S3_BUCKET,
-                    Key=config.submission_key(uid),
-                )
-                submission_data = json.loads(obj['Body'].read().decode('utf-8'))
+                submission_data = get_json(config.submission_key(uid))
                 submissions.append({
                     "uid": int(uid),
                     "submission": submission_data,

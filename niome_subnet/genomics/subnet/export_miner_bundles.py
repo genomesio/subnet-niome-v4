@@ -7,7 +7,6 @@ import subprocess
 from niome_subnet.genomics import pgxlib
 
 from niome_subnet.utils.settings import (
-    AWS_S3_BUCKET,
     BUNDLES_DIR,
     CASES_DIR,
     CONTRACT_FILE,
@@ -92,7 +91,7 @@ def _all_keys(obj, acc=None) -> set:
     return acc
 
 
-def export_miner_bundles(miner_uids, s3_client) -> None:
+def export_miner_bundles(miner_uids, storage) -> None:
     contract = pgxlib.read_json(CONTRACT_FILE)
     truth = pgxlib.read_json(TRUTH_FILE)
     cases_dir = pathlib.Path(CASES_DIR)
@@ -197,11 +196,7 @@ def export_miner_bundles(miner_uids, s3_client) -> None:
         subprocess.run(["tar", "-czf", compressed, "-C", str(out), uid],
                        check=True)
 
-        s3_client.upload_file(
-            Filename=compressed,
-            Bucket=AWS_S3_BUCKET,
-            Key=bundle_key(uid),
-        )
+        storage.upload_file(compressed, bundle_key(uid))
 
     overlap = set()
     seen: set[str] = set()

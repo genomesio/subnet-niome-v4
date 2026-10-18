@@ -17,7 +17,7 @@ See [`architecture.md`](architecture.md) for the round lifecycle and
 - **Hardware:** 16+ vCPU, 32 GB RAM, 200 GB SSD is comfortable. No GPU. The heavy step is
   bundle generation: the case pool must hold at least `n_miners × n_cases` cases, and each
   is rendered to VCF and copied into a per-miner bundle.
-- **Outbound network:** HTTPS to `niome-api.genomes.io`, to S3, and to GitHub.
+- **Outbound network:** HTTPS to `niome-api.genomes.io`, to S3 or Google Drive, and to GitHub.
 - **No Docker required.** At the `genotype_calls` tier the validator reads CPIC tables out
   of the PharmCAT repository directly; it does not run PharmCAT, and it does not need
   `bwa`, `samtools`, `bcftools` or `tabix`.
@@ -39,9 +39,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Credentials
 
-The validator uploads bundles and reads submissions from its own S3 bucket. Copy
-`.env.example` to `.env` and fill it in — `niome_subnet/utils/settings.py` loads it at
-import:
+The validator uploads bundles and reads submissions from its own storage: an S3 bucket
+or a Google Drive folder. Copy `.env.example` to `.env` and fill in **one** of the two —
+`niome_subnet/utils/settings.py` loads it at import.
+
+**AWS S3** (used whenever all of these are set):
 
 ```bash
 AWS_ACCESS_KEY_ID=...
@@ -51,7 +53,28 @@ AWS_S3_BUCKET=...
 ```
 
 The credentials need `PutObject`, `GetObject` and presigning on
-`niome/SARPP/*` in that bucket. Miners only ever see presigned URLs, never credentials.
+`niome/SARPP/*` in that bucket.
+
+**Google Drive** (used when the AWS values are empty):
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service-account.json
+GOOGLE_DRIVE_ROOT_FOLDER_ID=...
+```
+
+1. In Google Cloud, enable the Google Drive API and create a service account with a JSON key.
+2. Create a folder in a **Shared Drive** and add the service account's `client_email` as a
+   Content manager. Service accounts have no storage of their own, so uploads into a regular
+   "My Drive" folder fail.
+3. The Shared Drive must allow sharing with "anyone with the link": each miner downloads its
+   bundle through such a link. If your Workspace admin blocks link sharing, use S3.
+4. Set `GOOGLE_DRIVE_ROOT_FOLDER_ID` to the folder ID (the last part of the folder's URL).
+
+On Drive, submissions are uploaded through resumable-upload session URLs, and a submission
+modified after its upload deadline is rejected at scoring time. Bundle links do not expire
+on their own; each round replaces the bundle file, which kills the previous round's link.
+
+Miners only ever see upload/download URLs, never credentials.
 
 ### Registration
 
@@ -137,7 +160,7 @@ Then, per 720-block interval:
 |---|---|
 | `0` | `fetch_task()` → `data/contract.json`, `data/truth.json` |
 | `0` | `generate_observations()` → `data/cases/<case_id>/` |
-| `0` | `export_miner_bundles()` → `data/bundles/<uid>/`, tar, S3 upload, `bundle_assignments` written back to `truth.json` |
+| `0` | `export_miner_bundles()` → `data/bundles/<uid>/`, tar, upload to storage, `bundle_assignments` written back to `truth.json` |
 | `0 – 449` | each miner queried once with its two presigned URLs |
 | `450 – 699` | each submission downloaded to `data/submission.json` and scored; weights committed |
 
@@ -200,5 +223,5 @@ consensus behaviour — do not diverge from other validators without coordinatio
 | `SCORING_SYSTEM` | `"top"` | `"top"` or `"linear"` weight shape |
 | `TOP_MINER_COUNT` / `SCORE_DISTRIBUTION` | `10` / `[0.3, 0.2, 0.2, 0.15, …]` | top-k weight allocation |
 | `BURNING_RATE` | `0.02` | share of weight routed to `OWNER_HOTKEY`; `1.0` burns the whole round |
-| `AWS_S3_PREFIX` | `niome/SARPP` | S3 key prefix |
+| `AWS_S3_PREFIX` | `niome/SARPP` | storage key prefix (S3 key, or folder path on Drive) |
 | `MAX_TASK_RETRIES` / `BASE_DELAY_SECONDS` | `3` / `2` | backend retry policy (exponential) |
