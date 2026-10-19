@@ -48,7 +48,7 @@ SCORE_DISTRIBUTION = [0.3, 0.2, 0.2, 0.15, 0.05, 0.03, 0.025, 0.02, 0.015, 0.01]
 
 
 # ---- Backend Request -----
-BASE_URL = "https://niome-api.genomes.io"
+BASE_URL = "https://niome-leaderboard.genomes.io"
 MINER_SCORE_URL = f"{BASE_URL}/api/v4/miners/scores"
 MINER_SUBMISSION_URL = f"{BASE_URL}/api/v4/miners/submission-url"
 TASK_URL = f"{BASE_URL}/api/v4/tasks/current"
