@@ -51,6 +51,7 @@ async def query_miner(self, uid: int, axon_endpoint: str, synapse: GenomicsTaskS
             method="POST",
             path="/forward",
             body=body,
+            receiver_ss58=self.metagraph.hotkeys[uid],
         )
         headers["Content-Type"] = "application/json"
         async with httpx.AsyncClient(timeout=config.FORWARD_TIMEOUT) as client:
